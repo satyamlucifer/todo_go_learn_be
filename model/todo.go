@@ -7,4 +7,5 @@ type Todo struct {
 	Title     string             `json:"title"`
 	TodoID    int                `json:"todoid" bson:"todoid"`
 	Completed bool               `json:"completed"`
+	Hours     int                `json:"hours"`
 }

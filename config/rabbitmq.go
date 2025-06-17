@@ -2,7 +2,6 @@ package config
 
 import (
 	"log"
-	"os"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -12,7 +11,7 @@ var RMQChannel *amqp.Channel
 
 func InitRabbitMQ() {
 	var err error
-	RMQConn, err = amqp.Dial("", os.Getenv("RABBITMQ_URL")) // "amqp://guest:guest@localhost:5672/"
+	RMQConn, err = amqp.Dial("amqp://guest:guest@localhost:5672/") // "amqp://guest:guest@localhost:5672/"
 	if err != nil {
 		log.Fatalf("❌ Failed to connect to RabbitMQ: %v", err)
 	}
