@@ -3,18 +3,26 @@ package main
 import (
 	"todoapp/routes"
 	"todoapp/cron"
-	"github.com/gin-contrib/cors"
+    "github.com/rs/cors"
+    "net/http"
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
 	router := gin.Default()
-	
-	router.Use(cors.A)
+
+	c := cors.New(cors.Options{
+        AllowOriginFunc: func(origin string) bool {
+            return true // Allow all origins
+        },
+        AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+        AllowedHeaders: []string{"*"},
+        AllowCredentials: true,
+    })
 	
 	routes.TodoRoutes(router)
 	
 	go cron.StartCron()
 	
-	router.Run(":8080")
+    http.ListenAndServe(":8080", c.Handler(router))
 }
