@@ -1,16 +1,19 @@
 package controller
 
 import (
-	"fmt"
-	"strconv"
 	"context"
+	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
+	"strconv"
 	"time"
 	"todoapp/config"
-	"todoapp/utils"
 	"todoapp/model"
+	"todoapp/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
@@ -23,15 +26,14 @@ func CreateTodo(c *gin.Context) {
 		return
 	}
 
-	mongoClient := config.ConnectDB() // or however you initialized the client
+	mongoClient := config.ConnectDB()
 	counterCol := config.GetCollection(mongoClient, "counters")
-		seq, err := utils.GetNextSequence(counterCol, "todoid")
+	seq, err := utils.GetNextSequence(counterCol, "todoid")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Unable to get todo ID"})
 		return
 	}
 
-	// todo.ID = primitive.NewObjectID()
 	todo.TodoID = int(seq)
 	todo.Completed = false
 
@@ -43,28 +45,78 @@ func CreateTodo(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not create todo"})
 		return
 	}
+
+	// ✅ Publish to RabbitMQ for logging
+	logMessage := fmt.Sprintf("Created Todo: ID=%d, Title=%s", todo.TodoID, todo.Title)
+	config.PublishLog(logMessage)
+
 	c.JSON(http.StatusCreated, todo)
 }
 
 func GetTodos(c *gin.Context) {
-	var todos = []model.Todo{}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx := context.Background()
+
+	// Optional: If user-specific todos, extract user ID from context
+	cacheKey := "todos_cache"
+
+	// 1. Try to get from Redis cache
+	cached, err := config.RedisClient.Get(ctx, cacheKey).Result()
+	if err == nil {
+		// Cache hit
+		log.Println("✅ Redis cache hit")
+		c.Data(http.StatusOK, "application/json", []byte(cached))
+		return
+	} else if err != redis.Nil {
+		// Log actual Redis error (not just "cache miss")
+		log.Printf("⚠️ Redis GET error: %v\n", err)
+	} else {
+		log.Println("ℹ️ Redis cache miss")
+	}
+
+	// 2. Fallback to MongoDB
+	var todos []model.Todo
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	cursor, err := todoCollection.Find(ctx, bson.M{})
+	cursor, err := todoCollection.Find(dbCtx, bson.M{})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching todos"})
+		log.Printf("❌ MongoDB error: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching todos from DB"})
 		return
 	}
-	defer cursor.Close(ctx)
+	defer cursor.Close(dbCtx)
 
-	for cursor.Next(ctx) {
+	for cursor.Next(dbCtx) {
 		var todo model.Todo
-		cursor.Decode(&todo)
+		if err := cursor.Decode(&todo); err != nil {
+			log.Printf("⚠️ MongoDB decode error: %v\n", err)
+			continue
+		}
 		todos = append(todos, todo)
 	}
 
-	c.JSON(http.StatusOK, todos)
+	// 3. Cache the response
+	log.Print(todos)
+	jsonData, err := json.Marshal(todos)
+	if err == nil {
+		if err := config.RedisClient.Set(ctx, cacheKey, jsonData, 5*time.Second).Err(); err != nil {
+			log.Printf("⚠️ Redis SET error: %v\n", err)
+		} else {
+			log.Println("✅ Cached todos to Redis")
+		}
+	} else {
+		log.Printf("⚠️ JSON marshal error: %v\n", err)
+	}
+	log.Print(jsonData)
+
+	if len(todos) == 0 {
+		jsonData = []byte("[]")
+	} else {
+		jsonData, _ = json.Marshal(todos)
+	}
+
+	c.Data(http.StatusOK, "application/json", jsonData)
+
 }
 
 func GetTodo(c *gin.Context) {
@@ -79,7 +131,7 @@ func GetTodo(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cursor:= todoCollection.FindOne(ctx, bson.M{"todoid": id})
+	cursor := todoCollection.FindOne(ctx, bson.M{"todoid": id})
 
 	fmt.Println(cursor)
 	if err != nil {
@@ -91,7 +143,6 @@ func GetTodo(c *gin.Context) {
 	cursor.Decode(&todo)
 
 	fmt.Println(todo)
-
 
 	c.JSON(http.StatusOK, todo)
 }

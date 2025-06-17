@@ -1,84 +1,86 @@
 package controller
 
 import (
-    "github.com/golang-jwt/jwt/v5"
 	"context"
+	"log"
 	"net/http"
 	"time"
 	"todoapp/config"
-	"todoapp/utils"
 	"todoapp/model"
+	"todoapp/utils"
+
+	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-var jwtKey = []byte("your_secret_key")
+var jwtKey = []byte("a8d3f9c2e1b4f5678a9e0d12345f6789")
 
 func LoginUser(c *gin.Context) {
-    var input model.User
-    if err := c.BindJSON(&input); err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-        return
-    }
+	var input model.User
+	if err := c.BindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-    userCollection := config.GetCollection(config.ConnectDB(), "users")
+	userCollection := config.GetCollection(config.ConnectDB(), "users")
 
-    var user model.User
-    err := userCollection.FindOne(ctx, bson.M{"username": input.Username}).Decode(&user)
-    if err != nil {
-        c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
-        return
-    }
+	var user model.User
+	err := userCollection.FindOne(ctx, bson.M{"username": input.Username}).Decode(&user)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
+		return
+	}
 
-    if !utils.CheckPasswordHash(input.Password, user.Password) {
-        c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
-        return
-    }
+	if !utils.CheckPasswordHash(input.Password, user.Password) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
+		return
+	}
 
-    // Generate JWT token
-    token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-        "username": user.Username,
-        "exp":      time.Now().Add(24 * time.Hour).Unix(),
-    })
+	// Generate JWT token
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"username": user.Username,
+		"exp":      time.Now().Add(24 * time.Hour).Unix(),
+	})
 
-    tokenString, err := token.SignedString(jwtKey)
-    if err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Error generating token"})
-        return
-    }
+	tokenString, err := token.SignedString(jwtKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error generating token"})
+		return
+	}
 
-    c.JSON(http.StatusOK, gin.H{"token": tokenString})
+	c.JSON(http.StatusOK, gin.H{"token": tokenString})
 }
 
-
 func RegisterUser(c *gin.Context) {
-    var user model.User
-    if err := c.BindJSON(&user); err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-        return
-    }
+	var user model.User
+	if err := c.BindJSON(&user); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
-    hashedPassword, err := utils.HashPassword(user.Password)
-    if err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Error hashing password"})
-        return
-    }
+	hashedPassword, err := utils.HashPassword(user.Password)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error hashing password"})
+		return
+	}
 
-    user.Password = hashedPassword
+	user.Password = hashedPassword
 
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-    userCollection := config.GetCollection(config.ConnectDB(), "users")
-    _, err = userCollection.InsertOne(ctx, user)
-    if err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creating user"})
-        return
-    }
+	userCollection := config.GetCollection(config.ConnectDB(), "users")
+	_, err = userCollection.InsertOne(ctx, user)
+	log.Print(err)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creating user"})
+		return
+	}
 
-    c.JSON(http.StatusCreated, gin.H{"message": "User registered successfully"})
+	c.JSON(http.StatusCreated, gin.H{"message": "User registered successfully"})
 }

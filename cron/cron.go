@@ -1,15 +1,16 @@
 package cron
 
 import (
-    "github.com/robfig/cron/v3"
-    "log"
+	"log"
+
+	"github.com/robfig/cron/v3"
 )
 
 func StartCron() {
-    c := cron.New()
-    c.AddFunc("@every 1m", func() {
-        log.Println("Running cron job every 1 minute")
-        // your scheduled task here, e.g. clean up todos, send email reminders, etc.
-    })
-    c.Start()
+	croner := cron.New()
+	croner.AddFunc("@every 1m", func() {
+		log.Println("Running cron job every 1 minute")
+
+	})
+	croner.Start()
 }

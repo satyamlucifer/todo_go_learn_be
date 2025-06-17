@@ -2,7 +2,7 @@ package routes
 
 import (
 	"todoapp/controller"
-	"todoapp/middleware"
+	AuthMiddleware "todoapp/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -13,7 +13,7 @@ func TodoRoutes(router *gin.Engine) {
 	router.POST("/login", controller.LoginUser)
 
 	todos := router.Group("/")
-	
+
 	todos.Use(AuthMiddleware.AuthMiddleware())
 
 	{
